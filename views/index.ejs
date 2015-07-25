@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html ng-app="app">
+  <head>
+    <title><%= title %></title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+    <link rel='stylesheet' href='/stylesheets/ui-grid-unstable.css' />
+    <!-- Latest compiled and minified Bootstrap CSS -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+  </head>
+<body ng-controller="DashboardController">
+<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.25/angular.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.25/angular-route.min.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.25/angular-resource.min.js"></script>
+<script src="/javascripts/ui-grid-unstable.js"></script>
+
+<ng-view></ng-view>
+
+    <div class="left" style="width:300px;"> 
+	    <div ui-grid="envGrid" ui-grid-selection class="grandParentGrid"></div>
+	    <div ng-show="loader"><font color='red'>Refreshing ...</font></div>
+	</div>
+
+	<div class="left" style="width:1050px !important;">
+		<div class="contentGrid " id="UAT" >
+		<div class="grids left">
+			<div ui-grid="hostServerGrid" ui-grid-selection class="grid"></div>
+		    <div ng-repeat="x in myData.hostDetails">
+				<h3>{{x.hostHdrName}}</h3>
+				<div ui-grid="{data: x.hostDetails }" class="grid"></div>
+			</div>
+		</div>
+		
+		</div>
+		 
+  </div>
+<!--LOGS-->
+ <div class="left" id="right-panel-1" >
+ 			<div><h3>Version</h3></div>
+ 			<div>{{hostVersion}}</div>
+		    <div ng-repeat="y in myData.keyValues">
+				<h3>{{y.keyHdrName}}</h3>
+				<div ui-grid="{ enableRowSelection: true, enableRowHeaderSelection: false, data: y.keyValueData}" class="keyValue"></div>
+			</div>
+			<BR/>
+			<div style="border:1px solid; border-style: solid; border-width: 2px;width:350px;padding-left:10px;padding-bottom:10px">
+				<h3>ACTIVITIES</h3>
+				 <div ng-repeat="z in myData.activities.recent">
+					<h4>{{z.keyHdrName}}</h4>
+					<div ui-grid="{ enableRowSelection: true, enableRowHeaderSelection: false, data: z.keyValueData}" class="keyValue"></div>
+				</div>
+				<div ng-repeat="w in myData.activities.planned">
+					<h4>{{w.keyHdrName}}</h4>
+					<div ui-grid="{ enableRowSelection: true, enableRowHeaderSelection: false, data: w.keyValueData}" class="keyValue"></div>
+				</div>
+			</div>
+ </div>
+  <script type="text/javascript">
+  
+  	angular.module('app', ['ngRoute', 'ngResource','ui.grid', 'ui.grid.selection'])
+
+  	.factory('Dashboards', ['$resource', function($resource){
+          return $resource('/dashboardRoutes/:id', null, {
+            'update': { method:'PUT' }
+          });
+    }])
+
+  	.controller('DashboardController', ['$scope', 'Dashboards','$http','$timeout','$interval', function ($scope, Dashboards,$http,$timeout, $interval) {
+
+  		$scope.loader = false;
+		
+		/***** SPECIFY HERE THE OVERALL SECONDS FOR THE GRID TO REFRESH.*/
+		var gridRefreshIntervalSeconds = 48;
+
+		var glEnvGridIndex = 0;
+		var executeGlobalMethod = true;
+		var glhostServerGridIndex = 0;
+		var hostGridStopHandler;
+		
+		$scope.gridRefreshIntervalMilliSeconds = gridRefreshIntervalSeconds * 1000;
+	    
+	    /******* The Main Environment Names Grid *******/
+	    $scope.envGrid = {
+			enableRowSelection: true, 
+			enableRowHeaderSelection: false,
+			noUnselect : true,
+			//enableSelectAll: true,
+			selectionRowHeaderWidth: 35,
+			rowHeight: 35,
+			showGridFooter:true,
+			multiSelect : false,
+			
+			columnDefs : [{ name: 'envName', displayName: 'Environment Name' }],
+			onRegisterApi : function(gridApi){
+		      //set gridApi on scope
+		      $scope.envGridApi = gridApi;
+		      gridApi.selection.on.rowSelectionChanged($scope,function(row){
+		      	$scope.loader = true;
+		         var dashboard = Dashboards.get({id: row.entity._id }, function() {
+				     $scope.hostServerGrid.data = dashboard.envDetails;
+				     $scope.loader = false;
+				     $timeout(function() {
+			    		 if($scope.gridApi.selection.selectRow){
+							$scope.gridApi.selection.selectRow($scope.hostServerGrid.data[0]);
+						}	
+		    		 });
+				  });
+		      });
+	    	},
+	    	data: Dashboards.query(function (data1){
+	    		$scope.envGrid.data = data1;
+	    		//console.log(data1);
+	    		 $timeout(function() {
+		    		 if($scope.envGridApi.selection.selectRow){
+						$scope.envGridApi.selection.selectRow($scope.envGrid.data[0]);
+					}	
+	    		 });
+	    		 
+	    	})
+	    };
+
+		/****** Second Level Host Server Grid *******/
+ 		$scope.hostServerGrid = { enableRowSelection: true, enableRowHeaderSelection: false };
+ 		$scope.hostServerGrid.multiSelect = false;
+	    $scope.hostServerGrid.noUnselect = true;
+	    $scope.hostServerGrid.columnDefs = [
+		    { name: 'hostnme', displayName: 'Environment Name' },
+		    { name: 'ip', displayName: 'IP' },
+		    { name: 'cpu', displayName: 'CPU' },
+		    { name: 'disk', displayName: 'Disk' },
+		    { name: 'downtime', displayName: 'Down Time' }
+	  	];
+
+	    $scope.hostServerGrid.onRegisterApi = function(gridApi){
+	      $scope.gridApi = gridApi;
+	      gridApi.selection.on.rowSelectionChanged($scope,function(row){
+			$scope.loader = true;
+	         $http({method: 'GET', url: '/dashboardRoutes/child/'+(row.entity._id)}).
+			  success(function(data, status, headers, config) {
+			    // this callback will be called asynchronously
+			    // when the response is available.
+			    $scope.myData = data;
+			    $scope.hostVersion = data.version;
+			    $scope.initializeGridRefresh();
+			    $scope.loader = false;
+			  }).
+			  error(function(data, status, headers, config) {
+			    // called asynchronously if an error occurs
+			    // or server returns response with an error status.
+			    console.log('Oops and error', data);
+			  });
+	      });
+	    };
+
+	    /****** GRID Auto Refresh Logic - START *******/
+	    $scope.initializeGridRefresh = function (){
+		    if(executeGlobalMethod == true){
+			  	var refreshInterval = ($scope.gridRefreshIntervalMilliSeconds)/($scope.envGrid.data.length);
+			  	console.log('Refreshing Env Grid in each: '+(refreshInterval/1000)+' seconds.');
+			  	/* Calling Method and then setting interval since requires triggering instant. Interval will call first time even after specified interval. */
+			  	$scope.envGridrefresh();
+				$interval($scope.envGridrefresh,refreshInterval);
+		    }
+		    executeGlobalMethod = false;
+  		}
+  		
+  		$scope.envGridrefresh = function (){
+  			console.log('Env Grid...');
+  			var envGridMaxIndex = $scope.envGrid.data.length;
+  			if (glEnvGridIndex >= envGridMaxIndex) {
+  				glEnvGridIndex = 0;
+  			}
+  			$scope.envGridApi.selection.selectRow($scope.envGrid.data[glEnvGridIndex]);
+  			glEnvGridIndex++;
+
+			if (angular.isDefined(hostGridStopHandler)) {
+				 $interval.cancel(hostGridStopHandler);
+				 glhostServerGridIndex = 0;
+			}
+			var hostGridInterval = $scope.gridRefreshIntervalMilliSeconds/$scope.envGrid.data.length;
+			var refreshIntervalHostGrid = hostGridInterval/($scope.hostServerGrid.data.length);
+			console.log('Refreshing Host Grid in each: '+(refreshIntervalHostGrid/1000)+' seconds.');
+			/* Calling Method and then setting interval since requires triggering instant. Interval will call first time even after specified interval. */
+			$scope.hostGridRefresh();
+			hostGridStopHandler = $interval($scope.hostGridRefresh,refreshIntervalHostGrid);
+  		}
+  		
+  		$scope.hostGridRefresh= function(){  			
+			var hostGridMaxIndex = $scope.hostServerGrid.data.length;
+  			if (glhostServerGridIndex >= hostGridMaxIndex) {
+  				glhostServerGridIndex = 0;
+  			}
+  			$scope.gridApi.selection.selectRow($scope.hostServerGrid.data[glhostServerGridIndex]);
+  			glhostServerGridIndex++;
+  		}
+  		/******* GRID Auto Refresh Logic - END *******/
+    }])
+  </script>
+  </body>
+</html>
